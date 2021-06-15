@@ -1,0 +1,250 @@
+<template>
+  <div id="app"></div>
+</template>
+
+<script>
+import * as THREE from "three/build/three.module.js";
+import { FlyControls } from "three/examples/jsm/controls/FlyControls.js";
+
+export default {
+  name: "App",
+  mounted() {
+    // перемещение по сцене
+    const OrbitControls = require("three-orbit-controls")(THREE);
+    // элементы skeleton
+    const segmentHeight = 8;
+    const segmentCount = 4;
+    const height = segmentHeight * segmentCount;
+    const halfHeight = height * 0.5;
+
+    const sizing = {
+      segmentHeight: segmentHeight,
+      segmentCount: segmentCount,
+      height: height,
+      halfHeight,
+    };
+
+    // установка сцены и камеры
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      100,
+      window.innerWidth / window.innerHeight,
+      0.5,
+      1000
+    );
+
+    // 3. Добавить источник пассивного звучания Audio.
+    const listener = new THREE.AudioListener();
+    camera.add(listener);
+    const sound = new THREE.Audio(listener);
+    const audioLoader = new THREE.AudioLoader();
+    audioLoader.load(require("../public/audio/music.mp3"), function (buffer) {
+      sound.setBuffer(buffer);
+      sound.setLoop(true);
+      sound.setVolume(0.4);
+      sound.play();
+    });
+
+    // 5. Добавить элемент точечного звучания PositionalAudio, прикрепив его к одному из созданных элементов.
+    const sound2 = new THREE.PositionalAudio(listener);
+    const audioLoader2 = new THREE.AudioLoader();
+    audioLoader2.load(
+      require("../public/audio/positionalaudio.mp3"),
+      function (buffer) {
+        sound2.setBuffer(buffer);
+        sound2.setLoop(true);
+        sound2.setRefDistance(10);
+        sound2.play();
+      }
+    );
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    let controls2 = new FlyControls(camera, renderer.domElement);
+
+    controls2.movementSpeed = 1000;
+    controls2.domElement = renderer.domElement;
+    controls2.rollSpeed = Math.PI / 24;
+    controls2.autoForward = false;
+    controls2.dragToLook = false;
+
+    camera.position.z = 30;
+
+    // 6. Добавить возможность перемещения по сцены и возможность "смотреть по сторонам".
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.update();
+
+    // 2. Добавить Skybox к сцене
+    const loader = new THREE.CubeTextureLoader();
+    const texture = loader.load([
+      require("./assets/morning_ft.jpg"),
+      require("./assets/morning_bk.jpg"),
+      require("./assets/morning_up.jpg"),
+      require("./assets/morning_dn.jpg"),
+      require("./assets/morning_rt.jpg"),
+      require("./assets/morning_lf.jpg"),
+    ]);
+    scene.background = texture;
+
+    const light = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
+    // 1. Добавить тени к элементам из ЛР4, использовав атрибут CastShadow: true;
+    light.castShadow = true;
+    scene.add(light);
+
+    const light2 = new THREE.PointLight(0xff0000, 5, 120);
+    light2.position.set(50, 20, 0);
+    scene.add(light2);
+
+    // додекаэдр
+    const geometry2 = new THREE.DodecahedronGeometry(20);
+    const material2 = new THREE.MeshBasicMaterial({
+      color: 0x804000,
+    });
+    const dodecahedron = new THREE.Mesh(geometry2, material2);
+    dodecahedron.position.set(60, 0, 20);
+    scene.add(dodecahedron);
+
+    // цилиндр
+    const geometry3 = new THREE.CylinderGeometry(5, 5, 20, 32);
+    const material3 = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+    });
+    const icosahedron = new THREE.Mesh(geometry3, material3);
+    icosahedron.position.set(20, 0, -50);
+    scene.add(icosahedron);
+
+    const points = [];
+    for (let i = 0; i < 10; i++) {
+      points.push(new THREE.Vector2(Math.sin(i * 0.2) * 10 + 5, (i - 5) * 2));
+    }
+    // октаэдр
+    const geometry4 = new THREE.OctahedronGeometry(30, 0);
+    const material4 = new THREE.MeshNormalMaterial({
+      color: 0x0000ff,
+      side: THREE.DoubleSide,
+    });
+    const octahedron = new THREE.Mesh(geometry4, material4);
+    octahedron.position.set(100, 0, 50);
+    scene.add(octahedron);
+
+    var bones = [];
+    var prevBone = new THREE.Bone();
+    prevBone.position.y = -sizing.halfHeight;
+
+    for (let i = 0; i <= sizing.segmentCount; i++) {
+      const bone = new THREE.Bone();
+      bone.position.y = sizing.segmentHeight;
+      bones.push(bone);
+      prevBone.add(bone);
+      prevBone = bone;
+    }
+
+    const geometry = new THREE.BoxGeometry( 
+      5, // width
+      sizing.height, // height
+      5, // depth
+      sizing.segmentCount * 3, // widthSegments
+      sizing.segmentCount * 3, // heightSegments
+      sizing.segmentCount * 3 // depthSegments
+    );
+
+    const position = geometry.attributes.position;
+
+    const vertex = new THREE.Vector3();
+
+    const skinIndices = [];
+    const skinWeights = [];
+
+    for (let i = 0; i < position.count; i++) {
+      vertex.fromBufferAttribute(position, i);
+
+      const y = vertex.y + sizing.halfHeight;
+
+      const skinIndex = Math.floor(y / sizing.segmentHeight);
+      const skinWeight = (y % sizing.segmentHeight) / sizing.segmentHeight;
+
+      skinIndices.push(skinIndex, skinIndex + 1, 0, 0);
+      skinWeights.push(1 - skinWeight, skinWeight, 0, 0);
+    }
+
+    geometry.setAttribute(
+      "skinIndex",
+      new THREE.Uint16BufferAttribute(skinIndices, 4)
+    );
+    geometry.setAttribute(
+      "skinWeight",
+      new THREE.Float32BufferAttribute(skinWeights, 4)
+    );
+
+    const material = new THREE.MeshStandardMaterial({
+      skinning: true,
+      color: 0x4e0238,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.SkinnedMesh(geometry, material);
+
+    const skeleton = new THREE.Skeleton(bones);
+
+    bones[0].position.y = -sizing.halfHeight;
+
+    mesh.add(bones[0]);
+    mesh.bind(skeleton);
+
+    let helper = new THREE.SkeletonHelper(mesh);
+    helper.material.linewidth = 2;
+    scene.add(helper);
+
+    mesh.scale.multiplyScalar(1);
+    scene.add(mesh);
+    mesh.add(sound2);
+
+    let forward = true;
+    let stepSize = 0.01;
+
+    // анимация skeleton
+    const animate = function () {
+      requestAnimationFrame(animate);
+
+      if (forward) {
+        bones[1].rotation.z += stepSize;
+        bones[2].rotation.z += stepSize;
+        bones[3].rotation.z += stepSize / 2;
+
+        if (bones[2].rotation.z >= 1) {
+          forward = false;
+        }
+      } else {
+        bones[1].rotation.z -= stepSize;
+        bones[2].rotation.z -= stepSize;
+        bones[3].rotation.z -= stepSize / 2;
+
+        if (bones[2].rotation.z <= -1) {
+          forward = true;
+        }
+      }
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    window.addEventListener(
+      "resize",
+      function () {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      },
+      false
+    );
+  },
+};
+</script>
+
+<style lang="scss">
+body {
+  margin: 0;
+  padding: 0;
+}
+</style>
